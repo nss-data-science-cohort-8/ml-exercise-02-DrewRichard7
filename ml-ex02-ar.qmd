@@ -4,6 +4,7 @@ author: "andrew richard"
 format: 
     html:
         code-fold: false
+        theme: cyborg # darkly, cyborg, slate
 output: html
 jupyter: python3
 execute:
@@ -17,7 +18,9 @@ In this exercise, you'll be working with a dataset containing information about 
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
+import plotly.express as px
+import plotly.graph_objects as go
+import itables
 from sklearn.preprocessing import OneHotEncoder, Normalizer
 from sklearn.model_selection import train_test_split, cross_val_score, KFold, GridSearchCV
 from sklearn.linear_model import LinearRegression, LogisticRegression, Ridge, Lasso 
@@ -27,6 +30,7 @@ from sklearn import metrics
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error, root_mean_squared_error, mean_absolute_percentage_error, confusion_matrix, classification_report, roc_curve, roc_auc_score, RocCurveDisplay
 from sklearn.compose import TransformedTargetRegressor, ColumnTransformer
 from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
 ```
 Let's start by building a model using Age as a predictor variable.
 
@@ -70,6 +74,7 @@ imputer = SimpleImputer(missing_values = np.nan, strategy = "mean")
 X_train = imputer.fit_transform(X_train)
 X_test = imputer.transform(X_test)
 ```
+
 4. Now, fit your logistic regression model to the training data and generate predictions on the test data.
 
 ```{python}
@@ -85,6 +90,7 @@ There are multiple ways we can assess the performance of a classification model.
 conf = pd.DataFrame(confusion_matrix(y_test, y_pred))
 print(type(conf), conf)
 ```
+
 6. Plot the ROC curve. How well does your model do? Hint: You can use the [RocCurveDisplay](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.RocCurveDisplay.html) to create this plot.
 
 ```{python}
@@ -102,6 +108,7 @@ roc_auc = metrics.auc(fpr, tpr)
 print(roc_auc)
 RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=roc_auc).plot()
 ```
+
 You are likely to see that the model does not tend to predict that individuals survived the voyage. Let's see if we can determine why.
 
 7. Look at the average age of survivors vs. those that did not survive the voyage. What do you find?
@@ -115,6 +122,7 @@ avg_dead_age = dead["Age"].mean()
 
 print(f'avg survivor age: {avg_surv_age}, avg dead age: {avg_dead_age}')
 ```
+
 8. Perhaps the actual age number is as important as whether a passenger was a child or an adult. Create a Boolean column that indicates whether a passenger was a child or an adult. Pick a cutoff age and if they were less than this age, label as a child. We'll see later on how we can make choosing the age part of our model building pipeline, but for now, choose an age or do some calculations to pick an age that you think might do well.
 
 ```{python}
@@ -123,6 +131,7 @@ cutoff_age = 18
 titanic["is_child"] = [1 if x  < cutoff_age else 0 for x in titanic["Age"]]
 print(f'Number of children: {titanic["is_child"].sum()}')
 ```
+
 9. When imputing the missing values, you'll need to change the strategy from mean to most_frequent. Impute the missing values, then fit the model using this new variable, generate predictions, and view the confusion matrix. How did your model do?
 
 ```{python}
@@ -146,6 +155,7 @@ y_pred = logm.predict(X_test)
 conf = pd.DataFrame(confusion_matrix(y_test, y_pred))
 print(type(conf), conf)
 ```
+
 Other common metrics for classification include accuracy, precision, and recall. For more information, see https://developers.google.com/machine-learning/crash-course/classification/accuracy-precision-recall. These metrics can be viewed using the [classification_report function](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.classification_report.html). 
 
 10. Generate a classification report for your model.
@@ -155,6 +165,7 @@ target_names = ['Died', 'Survived']
 classification_rep = metrics.classification_report(y_test, y_pred, target_names=target_names)
 print(classification_rep)
 ```
+
 Another important variable is the Sex variable. 
 
 11. Create a DataFrame, X, which contains one column, Sex, and a Series, y, which contains the target variable. Perform a 70/30 train/test split, stratifying by the target variable. Make sure that you set a random_state during this split. 
@@ -174,6 +185,7 @@ X_train, X_test, y_train, y_test = train_test_split(
     stratify = y
 )
 ```
+
 If you inspect the Sex variable, you'll find that it is encoded as a string. We need to convert it to a numeric type so that our model can use it. We can do this using a [OneHotEncoder](https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.OneHotEncoder.html).
 
 12. Fit a OneHotEncoder to the training data and then transform both the training and test sets. Fit a model and evaluate the performance of this model.
@@ -189,8 +201,8 @@ y_pred = logreg.predict(X_test_encoded)
 
 print(pd.DataFrame(confusion_matrix(y_pred, y_test)))
 ```
-Notice how we have used different types of transformations, an imputer for the age-related variables and a OneHotEncoder for the Sex variable. When we need to use multiple types of transformations, a [ColumnTransformer](https://scikit-learn.org/stable/modules/generated/sklearn.compose.ColumnTransformer.html) is useful. 
 
+Notice how we have used different types of transformations, an imputer for the age-related variables and a OneHotEncoder for the Sex variable. When we need to use multiple types of transformations, a [ColumnTransformer](https://scikit-learn.org/stable/modules/generated/sklearn.compose.ColumnTransformer.html) is useful. 
 In the next part, we'll fit a model using both the Sex column and our column indicating whether the passenger was a child. 
 
 13. Create a DataFrame, X, which contains two columns, Sex and the child indicator column, and a Series, y, which contains the target variable. Perform a 70/30 train/test split, stratifying by the target variable. Make sure that you set a random_state during this split. Then create a ColumnTransformer which will apply a SimpleImputer to the child column and a OneHotEncoder to the Sex column. Fit it on the training data and then transform the test data. Then fit a model on this and see how well it does.
@@ -213,26 +225,207 @@ X_train, X_test, y_train, y_test = train_test_split(
 
 ct = ColumnTransformer(
     transformers=[
-        ("imputer", SimpleImputer, X_train["Sex"]),
-        ("ohe", OneHotEncoder, X_train["is_child"]),
+        ("imputer", SimpleImputer(strategy="most_frequent"), ["is_child"]),
+        ("ohe", OneHotEncoder(), ["Sex"]),
     ]
 )
-ct.fit_transform(X_train)
-ct.transform(X_test)
+X_train_ct = ct.fit_transform(X_train)
+X_test_ct = ct.transform(X_test)
 
 logm = LogisticRegression()
-logm.fit(X_train, y_train)
-y_pred = logm.predict(X_test
-
-
-
+logm.fit(X_train_ct, y_train)
+y_pred = logm.predict(X_test_ct)
 ```
+
 Finally, let's see how we can do all of this in a slightly more compact manner. We can use a [Pipeline](https://scikit-learn.org/stable/modules/generated/sklearn.pipeline.Pipeline.html) which allows us to specify preprocessing steps (like the ColumnTransformer we used earlier) as well as the model we want to fit. 
 
 14. Create a Pipeline which contains the ColumnTransformer and the LogisticRegression model. 
+
+```{python}
+predictors = ["Sex", "is_child"]
+target = "Survived"
+
+X = titanic[predictors]
+y = titanic[target]
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, 
+    y,
+    test_size = 0.3,
+    random_state = 42,
+    stratify = y
+)
+ct = ColumnTransformer(
+    transformers=[
+        ("imputer", SimpleImputer(strategy="most_frequent"), ["is_child"]),
+        ("ohe", OneHotEncoder(sparse_output=False, handle_unknown="ignore"), ["Sex"]),
+    ]
+)
+
+steps = [
+    ("ct", ct),
+    ("logreg", LogisticRegression())
+]
+
+pipeline = Pipeline(steps)
+pipeline.fit(X_train, y_train)
+y_pred = pipeline.predict(X_test)
+y_pred_proba = pipeline.predict_proba(X_test)[:, 1]
+
+print(f"mean_accuracy = {pipeline.score(X_test, y_test)}")
+print(f"AUC Score: {roc_auc_score(y_test, y_pred_proba):.4f}")
+print(confusion_matrix(y_test, y_pred))
+print(classification_report(y_test, y_pred))
+
+
+fpr, tpr, thresholds = roc_curve(y_test, y_pred_proba)
+# plt.plot(fpr, tpr)
+# plt.xlabel('False Positive Rate')
+# plt.ylabel('True Positive Rate')
+# plt.title('ROC Curve')
+# plt.show()
+
+
+fig = px.line(
+    x = fpr,
+    y = tpr,
+    title='ROC Curve',
+    labels={'x': 'False Positive Rate', 'y': 'True Positive Rate'}, # Add labels
+    template = "plotly_dark"
+).update_layout(
+    xaxis = dict(showgrid = False),
+    yaxis = dict(showgrid = False),
+    annotations=[
+            dict(
+                xref="paper",
+                yref="paper",
+                x=0.95,  # Position X
+                y=0.12,  # Position Y
+                text=f"AUC = {roc_auc_score(y_test, y_pred_proba):.4f}",
+                showarrow = False,
+                font=dict(
+                    size=12,
+                    color="white" # Ensure text is visible on dark background + box
+                ),
+                # --- Properties for the box ---
+                bgcolor="rgba(40, 40, 40, 0.8)", # Semi-transparent dark background
+                bordercolor="lightgrey",         # Color of the border
+                borderwidth=1,                 # Width of the border in pixels
+                borderpad=4                    # Padding between text and border
+            )
+    ]
+)
+fig.show()
+
+# with RocCurveDisplay
+# roc_auc = metrics.auc(fpr, tpr)
+# print(roc_auc)
+# RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=roc_auc).plot()
+```
+
 
 ** If you've reached this point, let your instructors know so that they can check in with you. **
 
 Stretch Goals
 
 1. Try adding additional features and see how this affects your model. Think carefully about if you want passenger class to be treated as a numeric or a categorical variable.
+
+
+```{python}
+itables.show(titanic, maxBytes = 0)
+```
+
+
+Ticket fares 
+```{python}
+fare_threshold = 100
+titanic["rich"] = [1 if x  < fare_threshold else 0 for x in titanic["Fare"]]
+
+# predictors = ["Sex", "is_child", "rich"]
+predictors = ["rich"]
+target = "Survived"
+
+X = titanic[predictors]
+y = titanic[target]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.3, random_state = 42, stratify = y)
+
+logreg = LogisticRegression()
+logreg.fit(X_train, y_train)
+y_pred = logreg.predict(X_test)
+
+print(pd.DataFrame(confusion_matrix(y_pred, y_test)))
+```
+
+
+```{python}
+fare_threshold = 200
+titanic["rich"] = [1 if x  < fare_threshold else 0 for x in titanic["Fare"]]
+
+predictors = ["Sex", "is_child", "rich"]
+target = "Survived"
+
+X = titanic[predictors]
+y = titanic[target]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.3, random_state = 42, stratify = y)
+
+ct = ColumnTransformer(
+    transformers=[
+        ("imputer", SimpleImputer(strategy="most_frequent"), ["is_child"]),
+        ("ohe", OneHotEncoder(sparse_output=False, handle_unknown="ignore"), ["Sex"]),
+    ],
+    remainder = "passthrough"
+)
+
+steps = [
+    ("ct", ct),
+    ("logreg", LogisticRegression())
+]
+
+pipeline = Pipeline(steps)
+pipeline.fit(X_train, y_train)
+y_pred = pipeline.predict(X_test)
+y_pred_proba = pipeline.predict_proba(X_test)[:, 1]
+
+print(f"mean_accuracy = {pipeline.score(X_test, y_test)}")
+print(f"AUC Score: {roc_auc_score(y_test, y_pred_proba):.4f}")
+print(confusion_matrix(y_test, y_pred))
+print(classification_report(y_test, y_pred))
+print(pd.DataFrame(confusion_matrix(y_pred, y_test)))
+
+fpr, tpr, thresholds = roc_curve(y_test, y_pred_proba)
+
+fig = px.line(
+    x = fpr,
+    y = tpr,
+    title='ROC Curve',
+    labels={'x': 'False Positive Rate', 'y': 'True Positive Rate'}, # Add labels
+    template = "plotly_dark" 
+).update_layout(
+    xaxis = dict(showgrid = False),
+    yaxis = dict(showgrid = False),
+    annotations=[
+            dict(
+                xref="paper",
+                yref="paper",
+                x=0.95,  # Position X
+                y=0.12,  # Position Y
+                text=f"AUC = {roc_auc_score(y_test, y_pred_proba):.4f}",
+                showarrow = False,
+                font=dict(
+                    size=12,
+                    color="white" # Ensure text is visible on dark background + box
+                ),
+                # --- Properties for the box ---
+                bgcolor="rgba(40, 40, 40, 0.8)", # Semi-transparent dark background
+                bordercolor="lightgrey",         # Color of the border
+                borderwidth=1,                 # Width of the border in pixels
+                borderpad=4                    # Padding between text and border
+            )
+    ]
+)
+fig.show()
+
+```
+
